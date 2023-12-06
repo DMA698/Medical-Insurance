@@ -1,0 +1,148 @@
+library(rsconnect)
+library(shiny)
+library(dplyr)
+library(plotly)
+library(shinythemes)
+library(ggplot2)
+library(caret)
+library(randomForest)
+
+# Loading data
+data <- read.csv("Medicalpremium.csv")
+
+data <- na.omit(data)
+
+# Encoding variables
+data$Diabetes <- as.factor(data$Diabetes)
+data$BloodPressureProblems <- as.factor(data$BloodPressureProblems)
+
+
+#UI application
+ui <- fluidPage(
+  theme = shinytheme("slate"),
+  titlePanel("Medical Premium Analysis"),
+  
+  tabsetPanel(
+    tabPanel("Insurance Premium vs. Age, Diabetes & B.P", 
+             sidebarLayout(
+               sidebarPanel(
+                 selectInput(inputId = "age_group",label =  "Select desired Age Group", choices = c("18-25","26-35", "36-45", "46-60", "61+")),
+                 selectInput(inputId = "diabetes", label = "Select your Diabetes", choices = c("0", "1")),
+                 sliderInput(inputId = "coverage", label = "Select Insurance Premium coverage", min = 0, max = 50000, value = c(0, 50000)),
+                 selectInput(inputId = "blood_pressure",label =  "Select your B.P", choices = c("Any", "Yes", "No")),
+               ),
+               mainPanel(
+                 plotlyOutput("prem_plot"),
+                 dataTableOutput("prem_table")
+               )
+             )
+    ),
+    
+    #Tab for collective analysis for Diabetes, B.P with respect to Age, Height & Weight
+    tabPanel("Extensive Analysis for Diabetes & B.P",
+             sidebarLayout(
+               sidebarPanel(
+                 selectInput("ext_age", "Select your Age Group", choices = c("All", "18-25","26-35", "36-45", "46-60", "61+")),
+                 selectInput("ext_diabetes", "Select your Diabetes", choices = c("0", "1")),
+                 selectInput("ext_blood_pressure", "Select your B.P", choices = c("All", "Yes", "No")),
+               ),
+               mainPanel(
+                 plotlyOutput("ext_plot"),
+                 dataTableOutput("ext_table")
+               )
+             )
+    )
+  )
+)
+
+
+#Server:
+server <- function(input, output) {
+  # 1)Insurance Premium vs. Age, Diabetes & B.P
+  filter_data_age <- reactive({
+    data %>%
+      filter(
+        Age >= switch(
+          input$age_group,
+          "18-25"= 18, "26-35"=26, "36-45"=36, "46-60" = 46, "61+" = 61
+        ),
+        Age <= switch(
+          input$age_group,
+          "18-25" = 25, "26-35" = 35, "36-45" = 45,"46-60"=60, "61+" = Inf
+        ),
+        Diabetes == input$diabetes,
+        PremiumPrice >= input$coverage[1],
+        PremiumPrice <= input$coverage[2],
+        if (input$blood_pressure == "Yes") BloodPressureProblems == 1 else if (input$blood_pressure == "No") BloodPressureProblems == 0 else TRUE,
+        if (input$diabetes == "Yes") Diabetes == 1 else if (input$diabetes == "No") Diabetes == 0 else TRUE
+      )
+  })
+  # Using interactive tool "plotly" for output
+  output$prem_plot <- renderPlotly({
+    plot_ly(data = filter_data_age(), 
+            x = ~Age, y = ~PremiumPrice, 
+            color = ~as.factor(PremiumPrice), 
+            type = 'scatter', mode = 'markers',
+            marker = list(size = 10, opacity = 0.7, colorscale = 'Viridis'),
+            text = ~paste('Age: ', Age, '<br>Premium: ', PremiumPrice),
+            hoverinfo = 'text'
+    ) %>%
+      layout(title = "Insurance Premium coverage with respect to Age",
+             xaxis = list(title = "Age"),
+             yaxis = list(title = "Premium"),
+             showlegend = FALSE)
+  })
+  
+  output$prem_table <- renderDataTable({
+    filter_data_age()
+  })
+  
+  
+  # 2) Extensive analysis for Diabetes and B.P w.r.to Age, Height & Weight
+  output$ext_plot <- renderPlotly({
+    # Filter data based on selected age group, diabetes, and blood pressure problem
+    filter_data_ext <- data %>%
+      filter(
+        if (input$ext_age != "All") Age >= switch(
+          input$ext_age,
+          "18-25"= 18, "26-35"=26, "36-45"=36, "46-60" = 46, "61+" = 61
+        ) else TRUE,
+        if (input$ext_age != "All") Age <= switch(
+          input$ext_age,
+          "18-25" = 25, "26-35" = 35, "36-45" = 45,"46-60"=60, "61+" = Inf
+        ) else TRUE,
+        if (input$ext_diabetes != "All") Diabetes == as.numeric(input$ext_diabetes) else TRUE,
+        if (input$ext_blood_pressure == "Any") TRUE
+        else if (input$ext_blood_pressure == "Yes") BloodPressureProblems == 1
+        else if (input$ext_blood_pressure == "No") BloodPressureProblems == 0
+        else TRUE
+      )
+    
+    plot_ly(data = filter_data_ext, 
+            x = ~Age, y = ~Weight, z = ~Height,
+            color = ~as.factor(Diabetes),
+            symbol = ~as.factor(BloodPressureProblems),
+            type = 'scatter3d', mode = 'markers',
+            marker = list(size = 8, opacity = 0.7, colorscale = 'Viridis'),
+            text = ~paste('Age: ', Age, '<br>Weight: ', Weight, '<br>Height: ', Height),
+            hoverinfo = 'text'
+    ) %>%
+      layout(title = "Extensive Analysis",
+             scene = list(
+               xaxis = list(title = "Age"),
+               yaxis = list(title = "Weight"),
+               zaxis = list(title = "Height")
+             ),
+             showlegend = TRUE
+      )
+    
+  })
+  output$ext_table <- renderDataTable({
+    # Display detailed data for Comprehensive Analysis
+    filter_data_ext
+  })
+  
+}
+
+#Run the application
+shinyApp(ui, server)

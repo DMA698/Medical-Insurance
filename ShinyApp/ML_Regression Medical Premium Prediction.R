@@ -1,0 +1,97 @@
+library(rsconnect)
+library(shiny)
+library(dplyr)
+library(plotly)
+library(shinythemes)
+library(ggplot2)
+library(caret)
+library(randomForest)
+
+# Loading data
+data <- read.csv("Insurance.csv")
+
+data <- na.omit(data)
+
+# Encoding variables
+data$Diabetes <- as.factor(data$Diabetes)
+data$BloodPressureProblems <- as.factor(data$BloodPressureProblems)
+
+# Data splittng for testing and training
+set.seed(123)
+trainIndex <- createDataPartition(data$PremiumPrice, p = 0.7, list = FALSE, times = 1)
+train_data <- data[trainIndex, ]
+test_data <- data[-trainIndex, ]
+
+# regression machine learning training model
+model <- train(
+  PremiumPrice ~ Age + Diabetes + BloodPressureProblems + Weight + Height, 
+  data = train_data, 
+  method = "rf"
+)
+
+# UI application
+ui <- fluidPage(
+  theme = shinytheme("slate"),
+  titlePanel("Medical Premium Prediction Analysis"),
+  
+  # Tab for regression M.L model for predicting Premium coverage    
+  tabPanel("Insurance Premium coverage Prediction", 
+           sidebarLayout(
+             sidebarPanel(
+               sliderInput(inputId = "prd_age", label = "Select your Age:", min = min(data$Age), max = max(data$Age), value = 30),
+               checkboxInput(inputId = "prd_diabetes",label =  "Diabetes:", value = FALSE),
+               checkboxInput(inputId = "prd_bloodpressureproblem",label =  "B.P:", value = FALSE),
+               sliderInput(inputId = "prd_weight", label = "Select your Weight:", min = min(data$Weight), max = max(data$Weight), value = 70),
+               sliderInput(inputId = "prd_height",label =  "Select your Height:", min = min(data$Height), max = max(data$Height), value = 170),
+               verbatimTextOutput("predictedPriceValue")
+             ),
+             mainPanel(
+               plotlyOutput("prdPlot", height = "500px")
+             )
+           )
+  )
+)
+# Server:
+server <- function(input, output) {
+  
+  
+  #Regression Machine learning model for Insurance coverage prediction
+  filter_data_prd <- reactive({
+    data.frame(
+      Age = input$prd_age,
+      Diabetes = as.factor(ifelse(input$prd_diabetes, 1, 0)),
+      BloodPressureProblems = as.factor(ifelse(input$prd_bloodpressureproblem, 1, 0)),
+      Weight = input$prd_weight,
+      Height = input$prd_height
+    )
+  })
+  
+  # Premium Prediction
+  output$prdPlot <- renderPlotly({
+    # Make predictions
+    prediction <- predict(model, newdata = filter_data_prd())
+    
+    # Create a scatter plot with trend line
+    plot_ly(data = data, x = ~Age, y = ~PremiumPrice, type = 'scatter', mode = 'markers',
+            marker = list(size = 8, opacity = 1, colorscale = 'Viridis'),
+            text = ~paste('Age: ', Age, '<br>Premium: ', PremiumPrice),
+            hoverinfo = 'text'
+    ) %>%
+      add_trace(x = filter_data_prd()$Age, y = prediction, 
+                type = 'scatter', mode = 'markers', 
+                marker = list(size = 15, color = 'Red', symbol = '*'),
+                text = ~paste('Predicted Insurance Premium coverage: ', round(prediction, 2)),
+                hoverinfo = 'text'
+      ) %>%
+      layout(title = "Insurance Premium Prediction coverage",
+             xaxis = list(title = "Age"),
+             yaxis = list(title = "Premium"),
+             showlegend = FALSE)
+  })
+  output$predictedPriceValue <- renderText({
+    sprintf("Predicted Insurance: %.2f", predict(model, newdata = filter_data_prd()))
+  })
+}
+
+# Run the application
+shinyApp(ui, server)
