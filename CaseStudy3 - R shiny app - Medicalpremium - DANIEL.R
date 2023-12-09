@@ -32,7 +32,7 @@ ui <- fluidPage(
   theme = shinytheme("flatly"),
   titlePanel(
     div(
-      h1("Medical Insurance Premium Analysis"),
+      h1("Indian Medical Insurance Premium Analysis"),
       h3("Predict Yearly Medical Cover Cost INR(₹)")
     )),
   tabsetPanel(
